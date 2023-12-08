@@ -37,15 +37,19 @@ class PatchTST_backbone(nn.Module):
             self.padding_patch_layer = nn.ReplicationPad1d((0, stride)) 
             patch_num += 1
         
+        
+        self.m = 16
+        
         # Backbone 
-        self.backbone = TSTiEncoder(c_in, patch_num=patch_num, patch_len=patch_len, max_seq_len=max_seq_len,
-                                n_layers=n_layers, d_model=d_model, n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff,
+        self.backbone = nn.ModuleList([TSTiEncoder(c_in, patch_num=patch_num//(2**i), m=self.m//(2**i), patch_len=patch_len, max_seq_len=max_seq_len,
+                                n_layers=n_layers, d_model=d_model*(2**i), n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff,
                                 attn_dropout=attn_dropout, dropout=dropout, act=act, key_padding_mask=key_padding_mask, padding_var=padding_var,
                                 attn_mask=attn_mask, res_attention=res_attention, pre_norm=pre_norm, store_attn=store_attn,
-                                pe=pe, learn_pe=learn_pe, verbose=verbose, **kwargs)
+                                pe=pe, learn_pe=learn_pe, verbose=verbose, **kwargs) for i in range(4)])
 
         # Head
-        self.head_nf = d_model * patch_num
+        # self.head_nf = d_model * patch_num
+        self.head_nf = d_model*(2**4) * (patch_num // self.m)
         self.n_vars = c_in
         self.pretrain_head = pretrain_head
         self.head_type = head_type
@@ -63,15 +67,26 @@ class PatchTST_backbone(nn.Module):
             z = z.permute(0,2,1)
             z = self.revin_layer(z, 'norm')
             z = z.permute(0,2,1)
-            
+
         # do patching
         if self.padding_patch == 'end':
             z = self.padding_patch_layer(z)
-        z = z.unfold(dimension=-1, size=self.patch_len, step=self.stride)                   # z: [bs x nvars x patch_num x patch_len]
-        z = z.permute(0,1,3,2)                                                              # z: [bs x nvars x patch_len x patch_num]
         
+        z = z.unfold(dimension=-1, size=self.patch_len, step=self.stride)                   # z: [bs x nvars x patch_num x patch_len]
+        # z = z.permute(0,1,3,2)                                                              # z: [bs x nvars x patch_len x patch_num]
+        
+        bs, n, patch_num, patch_len = z.shape
+        z = z.reshape(bs, n, self.m, int(patch_num / self.m), patch_len)
         # model
-        z = self.backbone(z)                                                                # z: [bs x nvars x d_model x patch_num]
+        for back in self.backbone:
+            z = torch.roll(z, shifts=-patch_len//2, dims=-1)
+            z = back(z) 
+            z = torch.roll(z, shifts=patch_len//2, dims=-1)
+            
+
+
+        # z = self.backbone(z)                                                                # z: [bs x nvars x d_model x patch_num]
+        z = z.squeeze(2)
         z = self.head(z)                                                                    # z: [bs x nvars x target_window] 
         
         # denorm
@@ -83,8 +98,7 @@ class PatchTST_backbone(nn.Module):
     
     def create_pretrain_head(self, head_nf, vars, dropout):
         return nn.Sequential(nn.Dropout(dropout),
-                    nn.Conv1d(head_nf, vars, 1)
-                    )
+                    nn.Conv1d(head_nf, vars, 1))
 
 
 class Flatten_Head(nn.Module):
@@ -123,10 +137,41 @@ class Flatten_Head(nn.Module):
         return x
         
         
-    
+class PatchMerging1D(nn.Module):
+    r""" 1D Patch Merging Layer.
+
+    Args:
+        input_length (int): Length of input sequence.
+        dim (int): Number of input channels.
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm.
+    """
+
+    def __init__(self, input_length, dim, norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.input_length = input_length
+        self.dim = dim
+        self.norm = norm_layer(2 * dim)
+
+    def forward(self, x):
+        """
+        x: B, L, C
+        """
+        L = self.input_length
+        B, S, C = x.shape
+        assert S == L, "input feature has wrong size"
+        assert L % 2 == 0, f"input length {L} is not even"
+
+        # Reshape and permute to get adjacent pairs
+        x = x.view(B, L // 2, 2, C).permute(0, 1, 3, 2).contiguous()
+        x = x.view(B, L // 2, 2 * C)  # B, L/2, 2*C
+
+        # x = self.norm(x)
+
+        return x
+
     
 class TSTiEncoder(nn.Module):  #i means channel-independent
-    def __init__(self, c_in, patch_num, patch_len, max_seq_len=1024,
+    def __init__(self, c_in, patch_num, m, patch_len, max_seq_len=1024,
                  n_layers=3, d_model=128, n_heads=16, d_k=None, d_v=None,
                  d_ff=256, norm='BatchNorm', attn_dropout=0., dropout=0., act="gelu", store_attn=False,
                  key_padding_mask='auto', padding_var=None, attn_mask=None, res_attention=True, pre_norm=False,
@@ -137,13 +182,15 @@ class TSTiEncoder(nn.Module):  #i means channel-independent
         
         self.patch_num = patch_num
         self.patch_len = patch_len
-        
+        self.m = m
+        # print(patch_num, m)
         # Input encoding
-        q_len = patch_num
+        q_len = int(patch_num / m)
         self.W_P = nn.Linear(patch_len, d_model)        # Eq 1: projection of feature vectors onto a d-dim vector space
         self.seq_len = q_len
 
         # Positional encoding
+        # print(q_len, d_model)
         self.W_pos = positional_encoding(pe, learn_pe, q_len, d_model)
 
         # Residual dropout
@@ -153,22 +200,43 @@ class TSTiEncoder(nn.Module):  #i means channel-independent
         self.encoder = TSTEncoder(q_len, d_model, n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout, dropout=dropout,
                                    pre_norm=pre_norm, activation=act, res_attention=res_attention, n_layers=n_layers, store_attn=store_attn)
 
+        self.merge = PatchMerging1D(self.m, d_model * q_len)
         
     def forward(self, x) -> Tensor:                                              # x: [bs x nvars x patch_len x patch_num]
         
         n_vars = x.shape[1]
         # Input encoding
-        x = x.permute(0,1,3,2)                                                   # x: [bs x nvars x patch_num x patch_len]
-        x = self.W_P(x)                                                          # x: [bs x nvars x patch_num x d_model]
+        # x = x.permute(0,1,3,2)                                                  # x: [bs x nvars x patch_num x patch_len]
 
-        u = torch.reshape(x, (x.shape[0]*x.shape[1],x.shape[2],x.shape[3]))      # u: [bs * nvars x patch_num x d_model]
+        if x.shape[-1] == self.W_P.in_features:
+            x = self.W_P(x)                                                          # x: [bs x nvars x patch_num x d_model]
+
+        u = torch.reshape(x, (x.shape[0]*x.shape[1]*x.shape[2], x.shape[3], x.shape[4]))      # u: [bs * nvars x patch_num x d_model]
+
         u = self.dropout(u + self.W_pos)                                         # u: [bs * nvars x patch_num x d_model]
 
         # Encoder
         z = self.encoder(u)                                                      # z: [bs * nvars x patch_num x d_model]
-        z = torch.reshape(z, (-1,n_vars,z.shape[-2],z.shape[-1]))                # z: [bs x nvars x patch_num x d_model]
-        z = z.permute(0,1,3,2)                                                   # z: [bs x nvars x d_model x patch_num]
+
+        num = z.shape[-2]
+        z = torch.reshape(z, (-1, self.m, z.shape[-2] * z.shape[-1]))                # z: [bs x nvars x patch_num x d_model]
+
+        z = self.merge(z)
+
+        z = torch.reshape(z, (-1, n_vars, z.shape[1], num, int(z.shape[-1] / num)))
+
+        # x = x.permute(0, 2, 1, 3, 4)
         
+        # u = torch.reshape(x, (x.shape[0]*x.shape[1], x.shape[2]*x.shape[3], x.shape[4]))
+        
+        # u = self.dropout(u + self.W_pos)
+        
+        # z = self.encoder(u)
+        
+        # z = self.merge(z)
+        
+        # z = torch.reshape(z, (-1, n_vars, x.shape[1]//2, self.seq_len, z.shape[-1]))
+
         return z    
             
             
@@ -190,10 +258,12 @@ class TSTEncoder(nn.Module):
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers: output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            for mod in self.layers: 
+                output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
             return output
         else:
-            for mod in self.layers: output = mod(output, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            for mod in self.layers: 
+                output = mod(output, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
             return output
 
 
