@@ -254,14 +254,8 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
         model.eval()
     else:
         model.in_layer.eval()
-        model.outlayer.eval()
-        # model.in_layer1.eval()
-        # model.in_layer2.eval()
-        # model.in_layer3.eval()
-        # model.out_layer1.eval()
-        # model.out_layer2.eval()
-        # model.out_layer3.eval()
-    model.eval()
+        model.out_layer.eval()
+
     with torch.no_grad():
         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(vali_loader)):
             batch_x = batch_x.float().to(device)
@@ -270,7 +264,7 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
 
-            outputs = model(batch_x, itr)
+            _, outputs = model(batch_x, itr)
             
             # encoder - decoder
             outputs = outputs[:, -args.pred_len:, :]
@@ -288,12 +282,7 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
     else:
         model.in_layer.train()
         model.out_layer.train()
-        # model.in_layer1.train()
-        # model.in_layer2.train()
-        # model.in_layer3.train()
-        # model.out_layer1.train()
-        # model.out_layer2.train()
-        # model.out_layer3.train()
+
     return total_loss
 
 def MASE(x, freq, pred, true):
@@ -317,7 +306,7 @@ def test(model, test_data, test_loader, args, device, itr):
             batch_x = batch_x.float().to(device)
             batch_y = batch_y.float()
             
-            outputs = model(batch_x[:, -args.seq_len:, :], itr)
+            _, outputs = model(batch_x[:, -args.seq_len:, :], itr)
             
             # encoder - decoder
             outputs = outputs[:, -args.pred_len:, :]

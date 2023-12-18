@@ -78,7 +78,13 @@ parser.add_argument('--tmax', type=int, default=10)
 parser.add_argument('--itr', type=int, default=3)
 parser.add_argument('--cos', type=int, default=0)
 
+# lora
+parser.add_argument('--r', type=int, default=8)
+parser.add_argument('--lora_alpha', type=int, default=32)
+parser.add_argument('--lora_dropout', type=float, default=0.1)
 
+# align
+parser.add_argument('--word_embedding_path', type=str, default="wte_pca_500.pt")
 
 args = parser.parse_args()
 
@@ -99,9 +105,9 @@ maes = []
 
 for ii in range(args.itr):
 
-    setting = '{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_gl{}_df{}_eb{}_itr{}'.format(args.model_id, 336, args.label_len, args.pred_len,
+    setting = '{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_gl{}_df{}_eb{}_itr{}_r{}_la{}'.format(args.model_id, args.seq_len, args.label_len, args.pred_len,
                                                                     args.d_model, args.n_heads, args.e_layers, args.gpt_layers, 
-                                                                    args.d_ff, args.embed, ii)
+                                                                    args.d_ff, args.embed, ii, args.r, args.lora_alpha)
     path = os.path.join(args.checkpoints, setting)
     if not os.path.exists(path):
         os.makedirs(path)
@@ -163,11 +169,13 @@ for ii in range(args.itr):
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
             
-            outputs = model(batch_x, ii)
+            outputs_text, outputs_time = model(batch_x, ii)
 
-            outputs = outputs[:, -args.pred_len:, :]
+            loss1 = nn.L1Loss()(outputs_text, outputs_time)
+
+            outputs_time = outputs_time[:, -args.pred_len:, :]
             batch_y = batch_y[:, -args.pred_len:, :].to(device)
-            loss = criterion(outputs, batch_y)
+            loss = criterion(outputs_time, batch_y) + loss1
             train_loss.append(loss.item())
 
             if (i + 1) % 1000 == 0:
@@ -209,6 +217,12 @@ for ii in range(args.itr):
     mse, mae = test(model, test_data, test_loader, args, device, ii)
     mses.append(mse)
     maes.append(mae)
+
+    with open('results.txt', 'a') as f:
+        f.write(f'{setting}\n')
+        f.write(f'mse:{mse}, mae:{mae}\n')
+        f.write('\n')
+        f.write('\n')
 
 mses = np.array(mses)
 maes = np.array(maes)
