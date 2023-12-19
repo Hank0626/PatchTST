@@ -18,7 +18,7 @@ class DistillationLoss(nn.Module):
     def __init__(self,args):
         super(DistillationLoss,self).__init__()
         self.args = args
-        self.loss_weight={'logits_w':1.,'feature_w':0.01}
+        self.loss_weight={'logits_w':1.,'feature_w':0.1}
 
         self.feature_loss = nn.L1Loss()
         self.logits_loss = nn.L1Loss()
@@ -39,7 +39,7 @@ class DistillationLoss(nn.Module):
         outputs_text, outputs_time,intermidiate_feat_time, intermidiate_feat_text \
             = outputs['outputs_text'], outputs['outputs_time'], outputs['intermidiate_time'],outputs['intermidiate_text']
         #1-----------------中间特征损失
-        feature_loss = sum([(0.5**idx)*self.feature_loss(feat_time,feat_text)
+        feature_loss = sum([(0.8**idx)*self.feature_loss(feat_time,feat_text)
                             for idx, (feat_time, feat_text)
                             in enumerate(zip(intermidiate_feat_time[::-1], intermidiate_feat_text[::-1]))])
 
@@ -51,7 +51,7 @@ class DistillationLoss(nn.Module):
         time_mse_loss = self.time_mse_loss(outputs_time, batch_y)
 
 
-        total_loss = time_mse_loss + self.loss_weight['logits_w'] * logits_loss + self.loss_weight['deature_w'] * feature_loss
+        total_loss = time_mse_loss + self.loss_weight['logits_w'] * logits_loss + self.loss_weight['feature_w'] * feature_loss
         return total_loss
 
 

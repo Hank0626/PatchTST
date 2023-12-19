@@ -6,9 +6,9 @@ model=GPT4TS
 pred_len=96
 percent=100
 
-for gpt_layer in 6
+for gpt_layer in 2 4 6
 do
-for seq_len in 192
+for seq_len in 96 192
 do
 
 python main.py \
