@@ -137,15 +137,21 @@ for ii in range(args.itr):
     # mse, mae = test(model, test_data, test_loader, args, device, ii)
 
     params = model.parameters()
-    model_optim = torch.optim.Adam(params, lr=args.learning_rate)
-    
-    early_stopping = EarlyStopping(patience=args.patience, verbose=True)
+
+    param_dict = [
+        {"params": [p for n, p in model.named_parameters() if p.requires_grad and '_proj' in n], "lr": 1e-4},
+        {"params": [p for n, p in model.named_parameters() if p.requires_grad and '_proj' not in n], "lr": args.learning_rate}
+    ]
+
     criterion = DistillationLoss(args)
+    # model_optim = torch.optim.Adam(params, lr=args.learning_rate)
+    model_optim = torch.optim.Adam([param_dict[1]], lr=args.learning_rate)
+    loss_optim = torch.optim.Adam([param_dict[0]], lr=args.learning_rate)
+    early_stopping = EarlyStopping(patience=args.patience, verbose=True)
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
     for epoch in range(args.train_epochs):
-
         iter_count = 0
         train_loss = []
         epoch_time = time.time()
@@ -153,6 +159,7 @@ for ii in range(args.itr):
 
             iter_count += 1
             model_optim.zero_grad()
+            loss_optim.zero_grad()
             batch_x = batch_x.float().to(device)
 
             batch_y = batch_y.float().to(device)
@@ -174,6 +181,7 @@ for ii in range(args.itr):
                 time_now = time.time()
             loss.backward()
             model_optim.step()
+            loss_optim.step()
 
         
         print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
@@ -181,12 +189,12 @@ for ii in range(args.itr):
         train_loss = np.average(train_loss)
         vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
 
-        # test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
+        test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
         # print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}, Test Loss: {4:.7f}".format(
         #     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
         # print(f"test loss: {test_loss}")
-        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
-            epoch + 1, train_steps, train_loss, vali_loss))
+        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+            epoch + 1, train_steps, train_loss, vali_loss, test_loss))
 
         if args.cos:
             scheduler.step()
@@ -197,6 +205,7 @@ for ii in range(args.itr):
         if early_stopping.early_stop:
             print("Early stopping")
             break
+        print(criterion.loss_weight)
 
     best_model_path = path + '/' + 'checkpoint.pth'
     model.load_state_dict(torch.load(best_model_path))

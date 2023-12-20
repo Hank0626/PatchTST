@@ -49,6 +49,20 @@ class Encoder_PCA(nn.Module):
         return x_time, x
 
 
+class Decoder(nn.Module):
+    def __init__(self, output_dim, hidden_dim=768, num_heads=12, num_encoder_layers=2):
+        super(Decoder, self).__init__()
+        self.linear = nn.Linear(hidden_dim, output_dim)
+
+        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_dim, nhead=num_heads)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_encoder_layers)
+
+    def forward(self, x):
+        x = self.transformer_encoder(x.transpose(0, 1)).transpose(0, 1)
+        x = self.linear(x)
+
+        return x
+
 class Encoder_Adaptive(nn.Module):
     def __init__(self, input_dim, word_embedding, hidden_dim=768, num_heads=12, num_encoder_layers=1):
         super(Encoder_Adaptive, self).__init__()
@@ -87,6 +101,17 @@ class Encoder_Adaptive(nn.Module):
 
         return x_time, x_text
 
+class Scale(nn.Module):
+    def __init__(self, c):
+        super(Scale, self).__init__()
+        self.time_scale = nn.Parameter(torch.ones((c, 1)), requires_grad=True)
+        self.text_scale = nn.Parameter(torch.ones((c, 1)), requires_grad=True)
+        
+    def forward(self, x, s):
+        if s == 'time':
+            return x * self.time_scale
+        else:
+            return x * self.text_scale
 
 class GPT4TS(nn.Module):
     
@@ -97,6 +122,7 @@ class GPT4TS(nn.Module):
         self.pretrain = configs.pretrain
         self.stride = configs.stride
         self.patch_num = (configs.seq_len - self.patch_size) // self.stride + 1
+        self.pred_len = configs.pred_len
 
         self.padding_patch_layer = nn.ReplicationPad1d((0, self.stride)) 
         self.patch_num += 1
@@ -141,43 +167,46 @@ class GPT4TS(nn.Module):
                 else:
                     param.requires_grad = False
 
-        for layer in (self.gpt2_text, self.gpt2, self.in_layer, self.out_layer):
+        self.time_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model*2,bias=False) for _ in range(configs.gpt_layers+1)])
+        
+        self.text_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model*2,bias=False) for _ in range(configs.gpt_layers+1)])
+
+        for layer in (self.gpt2_text, self.gpt2, self.in_layer, self.out_layer, self.time_proj, self.text_proj):
             layer.to(device=device)
             layer.train()
         
         self.cnt = 0
+        
 
 
     def forward(self, x, itr):
+        
         B, L, M = x.shape
 
         means = x.mean(1, keepdim=True).detach()
         x = x - means
-        stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False)+ 1e-5).detach() 
+        stdev = torch.sqrt(torch.var(x, dim=1, keepdim=True, unbiased=False) + 1e-5).detach() 
         x /= stdev
 
         x = rearrange(x, 'b l m -> b m l')
-
-        # x = self.padding_patch_layer(x)
-        # x = x.unfold(dimension=-1, size=self.patch_size, step=self.stride)
-        # x = rearrange(x, 'b m n p -> (b m) n p')
 
         outputs_time1, outputs1 = self.in_layer(x)
         if self.is_gpt:
             outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
             outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs1)
         # residue connection
-        outputs_time += outputs_time1 
+        outputs_time += outputs_time1
         outputs_text += outputs1
         
+        intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
+        intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
+
         outputs_time = self.out_layer(outputs_time)
         outputs_text = self.out_layer(outputs_text)
         
         outputs_time = rearrange(outputs_time, 'b m l -> b l m')
         outputs_text = rearrange(outputs_text, 'b m l -> b l m')
-        
-        # outputs = rearrange(outputs, '(b m) l -> b l m', b=B)
-        
+
         outputs_text = outputs_text * stdev + means
         outputs_time = outputs_time * stdev + means
 
