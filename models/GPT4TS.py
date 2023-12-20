@@ -167,9 +167,9 @@ class GPT4TS(nn.Module):
                 else:
                     param.requires_grad = False
 
-        self.time_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model*2,bias=False) for _ in range(configs.gpt_layers+1)])
+        self.time_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model,bias=False) for _ in range(configs.gpt_layers+1)])
         
-        self.text_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model*2,bias=False) for _ in range(configs.gpt_layers+1)])
+        self.text_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model,bias=False) for _ in range(configs.gpt_layers+1)])
 
         for layer in (self.gpt2_text, self.gpt2, self.in_layer, self.out_layer, self.time_proj, self.text_proj):
             layer.to(device=device)
