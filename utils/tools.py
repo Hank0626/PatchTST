@@ -255,6 +255,8 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
     else:
         model.in_layer.eval()
         model.out_layer.eval()
+        model.time_proj.eval()
+        model.text_proj.eval()
 
     with torch.no_grad():
         for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in tqdm(enumerate(vali_loader)):
@@ -283,6 +285,8 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
     else:
         model.in_layer.train()
         model.out_layer.train()
+        model.time_proj.train()
+        model.text_proj.train()
 
     return total_loss
 

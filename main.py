@@ -137,15 +137,15 @@ for ii in range(args.itr):
     # mse, mae = test(model, test_data, test_loader, args, device, ii)
 
     params = model.parameters()
-    model_optim = torch.optim.Adam(params, lr=args.learning_rate)
+    criterion = DistillationLoss(args)
+    # model_optim = torch.optim.Adam(params, lr=args.learning_rate)
+    model_optim = torch.optim.Adam(list(params) + list(criterion.parameters()), lr=args.learning_rate)
     
     early_stopping = EarlyStopping(patience=args.patience, verbose=True)
-    criterion = DistillationLoss(args)
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
     for epoch in range(args.train_epochs):
-
         iter_count = 0
         train_loss = []
         epoch_time = time.time()
@@ -181,12 +181,12 @@ for ii in range(args.itr):
         train_loss = np.average(train_loss)
         vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
 
-        # test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
+        test_loss = vali(model, test_data, test_loader, criterion, args, device, ii)
         # print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}, Test Loss: {4:.7f}".format(
         #     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
         # print(f"test loss: {test_loss}")
-        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
-            epoch + 1, train_steps, train_loss, vali_loss))
+        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+            epoch + 1, train_steps, train_loss, vali_loss, test_loss))
 
         if args.cos:
             scheduler.step()
@@ -197,6 +197,7 @@ for ii in range(args.itr):
         if early_stopping.early_stop:
             print("Early stopping")
             break
+        print(criterion.loss_weight)
 
     best_model_path = path + '/' + 'checkpoint.pth'
     model.load_state_dict(torch.load(best_model_path))
