@@ -168,3 +168,56 @@ class MMD_loss(torch.nn.Module):
             YX = torch.mean(kernels[batch_size:, :batch_size])
             loss = torch.mean(XX + YY - XY - YX)
             return loss
+
+class BidirectionalLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size,proj_img):
+        super().__init__()
+        self.rnn = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
+        self.linear = nn.Linear(hidden_size * 2, output_size)
+        self.proj_img= proj_img
+
+    def forward(self, input):
+        """
+        input : visual feature [batch_size x T x input_size]
+        output : contextual feature [batch_size x T x output_size]
+        """
+        if self.proj_img:
+            N,C,H,W = input.shape
+            input = input.view(N,C,-1).permute(0,2,1).contiguous()#N,C,H,W --> N,C,HW --> N, HW, C
+        self.rnn.flatten_parameters()
+        recurrent, _ = self.rnn(input)  # batch_size x T x input_size -> batch_size x T x (2*hidden_size)
+        output = self.linear(recurrent)  # batch_size x T x output_size
+        # if self.proj_img:
+        #     output = output.permute(0,2,1).contiguous().view(N,-1,H,W)
+        return output
+
+
+class Sematic_Loss(nn.Module):
+    def __init__(self, proj_dim=None):
+        super(Sematic_Loss, self).__init__()
+        self.proj = BidirectionalLSTM(input_size=proj_dim,hidden_size=256,output_size=512,proj_img=False)
+        self.temp = 0.1
+
+    def vec_contrastive_loss(self, anchor_embed, pos_embed, n_embed_per_batch):
+        instances = torch.cat((anchor_embed, pos_embed), dim=0)
+        normalized_instances = F.normalize(instances, dim=1)
+        similarity_matrix = normalized_instances @ normalized_instances.T
+        similarity_matrix_exp = (similarity_matrix / self.temp).exp_()
+        cross_entropy_denominator = similarity_matrix_exp.sum(
+            dim=1) - similarity_matrix_exp.diag()
+        cross_entropy_nominator = torch.cat((
+            similarity_matrix_exp.diagonal(offset=n_embed_per_batch)[:n_embed_per_batch],
+            similarity_matrix_exp.diagonal(offset=-n_embed_per_batch)
+        ), dim=0)
+        cross_entropy_similarity = cross_entropy_nominator / cross_entropy_denominator
+        loss = - cross_entropy_similarity.log()
+        loss = loss.mean()
+        return loss
+
+    def forward(self, stu_vec, tea_vec):
+        stu_vec = self.proj(stu_vec)
+        tea_vec = self.proj(tea_vec)
+        stu_vec = stu_vec.reshape(-1, stu_vec.shape[-1])
+        tea_vec = tea_vec.reshape(-1, tea_vec.shape[-1])
+        loss = self.vec_contrastive_loss(stu_vec, tea_vec, stu_vec.shape[0])
+        return loss
