@@ -147,8 +147,9 @@ class GPT4TS(nn.Module):
         word_embedding = torch.tensor(torch.load(configs.word_embedding_path)).to(device=device)
         #word_embedding = self.gpt2_text.wte.weight.detach()
         # self.in_layer = nn.Linear(configs.patch_size, configs.d_model)
-        self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, hidden_dim=configs.d_model)
-        self.out_layer = nn.Linear(configs.d_model, configs.pred_len)
+        # self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, hidden_dim=configs.d_model)
+        self.in_layer = Encoder_PCA(configs.patch_size, word_embedding, hidden_dim=configs.d_model)
+        self.out_layer = nn.Linear(configs.d_model * self.patch_num, configs.pred_len)
         
         if configs.freeze and configs.pretrain:
             for i, (name, param) in enumerate(self.gpt2.named_parameters()):
@@ -186,6 +187,10 @@ class GPT4TS(nn.Module):
 
         x = rearrange(x, 'b l m -> b m l')
 
+        x = self.padding_patch_layer(x)
+        x = x.unfold(dimension=-1, size=self.patch_size, step=self.stride)
+        x = rearrange(x, 'b m n p -> (b m) n p')
+
         outputs_time1, outputs1 = self.in_layer(x)
         if self.is_gpt:
             outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
@@ -197,11 +202,12 @@ class GPT4TS(nn.Module):
         intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
         intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
 
-        outputs_time = self.out_layer(outputs_time)
-        outputs_text = self.out_layer(outputs_text)
+
+        outputs_time = self.out_layer(outputs_time.reshape(B*M, -1))
+        outputs_text = self.out_layer(outputs_text.reshape(B*M, -1))
         
-        outputs_time = rearrange(outputs_time, 'b m l -> b l m')
-        outputs_text = rearrange(outputs_text, 'b m l -> b l m')
+        outputs_time = rearrange(outputs_time, '(b m) l -> b l m', b=B)
+        outputs_text = rearrange(outputs_text, '(b m) l -> b l m', b=B)
 
         outputs_text = outputs_text * stdev + means
         outputs_time = outputs_time * stdev + means

@@ -5,7 +5,7 @@ model=GPT4TS
 
 for percent in 100
 do
-for pred_len in 96
+for pred_len in 96 192 336 720
 do
 
 python main.py \
@@ -18,7 +18,7 @@ python main.py \
     --pred_len $pred_len \
     --batch_size 64 \
     --learning_rate 0.0001 \
-    --train_epochs 10 \
+    --train_epochs 100 \
     --decay_fac 0.9 \
     --d_model 768 \
     --n_heads 4 \
@@ -31,10 +31,14 @@ python main.py \
     --patch_size 16 \
     --stride 8 \
     --percent $percent \
-    --gpt_layer 4 \
+    --gpt_layer 6 \
     --itr 1 \
     --model $model \
-    --is_gpt 1
+    --is_gpt 1 \
+    --r 8 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --patience 10
     
 done
 done

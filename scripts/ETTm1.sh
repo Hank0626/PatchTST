@@ -39,7 +39,7 @@
 # # done
 # # done
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=7
 
 seq_len=96
 model=GPT4TS
@@ -49,7 +49,7 @@ percent=100
 
 for gpt_layer in 6
 do
-for pred_len in 192 336 720
+for pred_len in 720
 do
 
 python main.py \
