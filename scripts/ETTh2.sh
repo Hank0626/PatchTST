@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=7
 
 seq_len=96
 model=GPT4TS
@@ -43,7 +43,7 @@ python main.py \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 10
+    --patience 5
 
 echo '====================================================================================================================='
 done

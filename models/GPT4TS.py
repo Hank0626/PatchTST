@@ -12,9 +12,10 @@ from embed import DataEmbedding, DataEmbedding_wo_time
 from transformers.models.gpt2.configuration_gpt2 import GPT2Config
 from peft import get_peft_config, get_peft_model, get_peft_model_state_dict, LoraConfig, TaskType
 from models.GPT2_arch import AccustumGPT2Model
+from transformers import AutoTokenizer
 
 class Encoder_PCA(nn.Module):
-    def __init__(self, input_dim, word_embedding, hidden_dim=768, num_heads=12, num_encoder_layers=1):
+    def __init__(self, input_dim, word_embedding, prompt_embedding, hidden_dim=768, num_heads=12, num_encoder_layers=1):
         super(Encoder_PCA, self).__init__()
         self.linear = nn.Linear(input_dim, hidden_dim)
 
@@ -24,13 +25,20 @@ class Encoder_PCA(nn.Module):
         self.cross_attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads)
         
         self.word_embedding = word_embedding.T
+        
+        self.prompt_embedding = prompt_embedding
 
     def forward(self, x):
         B = x.shape[0]
         if self.word_embedding.ndim == 2:
             self.word_embedding = self.word_embedding.repeat(B, 1, 1)
+        
+        if self.prompt_embedding.shape[0] != B:
+            self.prompt_embedding = self.prompt_embedding.repeat(B, 1, 1)
 
         x = self.linear(x)
+        
+        x = torch.cat([self.prompt_embedding, x], dim=1)
 
         x = self.transformer_encoder(x.transpose(0, 1)).transpose(0, 1)
 
@@ -111,7 +119,7 @@ class Scale(nn.Module):
 
 class GPT4TS(nn.Module):
     
-    def __init__(self, configs, device):
+    def __init__(self, configs, prompt_dict, device):
         super(GPT4TS, self).__init__()
         self.is_gpt = configs.is_gpt
         self.patch_size = configs.patch_size
@@ -144,10 +152,13 @@ class GPT4TS(nn.Module):
             self.gpt2 = get_peft_model(self.gpt2, peft_config)
             # print("gpt2 = {}".format(self.gpt2))
 
+        prompt = prompt_dict[configs.data_path.split('.')[0]]
+        tokenizer = AutoTokenizer.from_pretrained("gpt2")
+        prompt_embedding = self.gpt2.wte(tokenizer.encode(prompt, return_tensors="pt")).mean(1).to(device=device)
+        
         word_embedding = torch.tensor(torch.load(configs.word_embedding_path)).to(device=device)
-        #word_embedding = self.gpt2_text.wte.weight.detach()
         # self.in_layer = nn.Linear(configs.patch_size, configs.d_model)
-        self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, hidden_dim=configs.d_model)
+        self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, prompt_embedding, hidden_dim=configs.d_model)
         self.out_layer = nn.Linear(configs.d_model, configs.pred_len)
         
         if configs.freeze and configs.pretrain:
@@ -197,9 +208,9 @@ class GPT4TS(nn.Module):
         intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
         intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
 
-        outputs_time = self.out_layer(outputs_time)
-        outputs_text = self.out_layer(outputs_text)
-        
+        outputs_time = self.out_layer(outputs_time[:, -M:, :])
+        outputs_text = self.out_layer(outputs_text[:, -M:, :])
+
         outputs_time = rearrange(outputs_time, 'b m l -> b l m')
         outputs_text = rearrange(outputs_text, 'b m l -> b l m')
 

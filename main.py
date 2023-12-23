@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import time
 from utils.distillationLoss import DistillationLoss
+from utils.prompts import prompt_dict
 import warnings
 import matplotlib.pyplot as plt
 import numpy as np
@@ -132,7 +133,7 @@ for ii in range(args.itr):
         model = DLinear(args, device)
         model.to(device)
     else:
-        model = GPT4TS(args, device)
+        model = GPT4TS(args, prompt_dict, device)
     # mse, mae = test(model, test_data, test_loader, args, device, ii)
 
     params = model.parameters()
