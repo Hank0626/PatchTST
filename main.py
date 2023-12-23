@@ -83,6 +83,9 @@ parser.add_argument('--lora_dropout', type=float, default=0.1)
 # align
 parser.add_argument('--word_embedding_path', type=str, default="wte_pca_500.pt")
 
+# smooth L1
+parser.add_argument('--smooth', action="store_true")
+
 args = parser.parse_args()
 
 SEASONALITY_MAP = {
