@@ -45,9 +45,9 @@ class DistillationLoss(nn.Module):
         # 3----------------任务特定的标签损失
         outputs_time = outputs_time[:, -self.args.pred_len:, :]
         batch_y = batch_y[:, -self.args.pred_len:, :].to(logits_loss.device)
-        #time_mse_loss = self.time_mse_loss(outputs_time, batch_y)
+        # time_mse_loss = self.time_mse_loss(outputs_time, batch_y)
 
-        total_loss =  nn.L1Loss()(outputs_time, batch_y) + logits_loss + 0.01 * feature_loss
+        total_loss = nn.L1Loss()(outputs_time, batch_y) + logits_loss + 0.01 * feature_loss
         return total_loss
 
 

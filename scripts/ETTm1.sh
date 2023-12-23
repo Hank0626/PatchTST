@@ -39,7 +39,7 @@
 # # done
 # # done
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 seq_len=96
 model=GPT4TS
@@ -49,7 +49,7 @@ percent=100
 
 for gpt_layer in 6
 do
-for pred_len in 192 336 720
+for pred_len in 96
 do
 
 python main.py \
@@ -62,7 +62,7 @@ python main.py \
     --pred_len $pred_len \
     --batch_size 256 \
     --decay_fac 0.5 \
-    --learning_rate 0.0001 \
+    --learning_rate 0.0005 \
     --lradj type1 \
     --train_epochs 100 \
     --d_model 768 \
@@ -85,7 +85,7 @@ python main.py \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 10
+    --patience 5
 
 done
 done
