@@ -1,14 +1,13 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=7
 
-# seq_len=96
+seq_len=96
 model=GPT4TS
 
-pred_len=720
 percent=100
 
 for gpt_layer in 6
 do
-for seq_len in 96
+for pred_len in 96 192 336 720
 do
 
 python main.py \
@@ -44,7 +43,7 @@ python main.py \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 10
+    --patience 5
 
 echo '====================================================================================================================='
 done

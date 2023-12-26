@@ -15,17 +15,17 @@ class SMAPE(nn.Module):
 
 
 class DistillationLoss(nn.Module):
-    def __init__(self,args):
+    def __init__(self, args):
         super(DistillationLoss,self).__init__()
         self.args = args
         self.loss_weight={'logits_w': 1,'feature_w':0.01}
-        self.feature_loss = nn.L1Loss()
-        self.logits_loss = nn.L1Loss()
-
-        if self.args.loss_func == 'mse':
-            self.time_mse_loss = nn.MSELoss()
-        elif self.args.loss_func == 'smape':
-            self.time_mse_loss = SMAPE()
+        self.feature_loss = nn.SmoothL1Loss() if args.smooth else nn.L1Loss()
+        self.logits_loss = nn.SmoothL1Loss() if args.smooth else nn.L1Loss()
+        self.time_mse_loss = nn.SmoothL1Loss() if args.smooth else nn.L1Loss()
+        # if self.args.loss_func == 'mse':
+        #     self.time_mse_loss = nn.MSELoss()
+        # elif self.args.loss_func == 'smape':
+        #     self.time_mse_loss = SMAPE()
 
 
     def forward(self, outputs, batch_y):
@@ -45,9 +45,9 @@ class DistillationLoss(nn.Module):
         # 3----------------任务特定的标签损失
         outputs_time = outputs_time[:, -self.args.pred_len:, :]
         batch_y = batch_y[:, -self.args.pred_len:, :].to(logits_loss.device)
-        #time_mse_loss = self.time_mse_loss(outputs_time, batch_y)
+        time_mse_loss = self.time_mse_loss(outputs_time, batch_y)
 
-        total_loss =  nn.L1Loss()(outputs_time, batch_y) + logits_loss + 0.01 * feature_loss
+        total_loss = time_mse_loss + logits_loss + 0.01 * feature_loss
         return total_loss
 
 

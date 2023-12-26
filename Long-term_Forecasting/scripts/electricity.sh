@@ -1,6 +1,6 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
-seq_len=512
+seq_len=96
 model=GPT4TS
 
 for pred_len in 96 192 336 720
@@ -16,9 +16,9 @@ python main.py \
     --seq_len $seq_len \
     --label_len 48 \
     --pred_len $pred_len \
-    --batch_size 2048 \
-    --learning_rate 0.0001 \
-    --train_epochs 10 \
+    --batch_size 32 \
+    --learning_rate 0.0005 \
+    --train_epochs 20 \
     --decay_fac 0.75 \
     --d_model 768 \
     --n_heads 4 \
@@ -31,10 +31,14 @@ python main.py \
     --stride 8 \
     --percent $percent \
     --gpt_layer 6 \
-    --itr 3 \
+    --itr 1 \
     --model $model \
     --cos 1 \
     --tmax 10 \
-    --is_gpt 1
+    --is_gpt 1 \
+    --r 8 \
+    --lora_alpha 32 \
+    --lora_dropout 0.1 \
+    --patience 5
 done
 done
