@@ -10,16 +10,17 @@ do
 for pred_len in 96 192 336 720
 do
 
-python main.py \
+python run.py \
     --root_path ./datasets/ETT-small/ \
     --data_path ETTh2.csv \
-    --model_id ETTh2_$model'_'$gpt_layer'_'$seq_len'_'$pred_len'_'$percent \
-    --data ett_h \
+    --is_training 1 \
+    --task_name long_term_forecast \
+    --model_id ETTh2_$seq_len'_'$pred_len \
+    --data ETTh2 \
     --seq_len $seq_len \
     --label_len 0 \
     --pred_len $pred_len \
     --batch_size 256 \
-    --decay_fac 0.5 \
     --learning_rate 0.0005 \
     --lradj type1 \
     --train_epochs 100 \
@@ -29,16 +30,10 @@ python main.py \
     --dropout 0.3 \
     --enc_in 7 \
     --c_out 7 \
-    --freq 0 \
-    --patch_size 16 \
-    --stride 8 \
-    --percent $percent \
-    --gpt_layer $gpt_layer \
+    --gpt_layers $gpt_layer \
     --itr 1 \
     --model $model \
     --tmax 20 \
-    --pretrain 1 \
-    --is_gpt 1 \
     --cos 1 \
     --r 8 \
     --lora_alpha 32 \

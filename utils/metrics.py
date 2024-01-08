@@ -43,7 +43,5 @@ def metric(pred, true):
     rmse = RMSE(pred, true)
     mape = MAPE(pred, true)
     mspe = MSPE(pred, true)
-    smape = SMAPE(pred, true)
-    nd = ND(pred, true)
 
-    return mae, mse, rmse, mape, mspe, smape, nd
+    return mae, mse, rmse, mape, mspe

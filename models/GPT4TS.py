@@ -30,6 +30,8 @@ class Encoder_PCA(nn.Module):
         B = x.shape[0]
         if self.word_embedding.ndim == 2:
             self.word_embedding = self.word_embedding.repeat(B, 1, 1)
+        elif self.word_embedding.shape[0] != B:
+            self.word_embedding = self.word_embedding[0].repeat(B, 1, 1)
 
         x = self.linear(x)
 
@@ -110,19 +112,10 @@ class Scale(nn.Module):
         else:
             return x * self.text_scale
 
-class GPT4TS(nn.Module):
-    
+class Model(nn.Module):
     def __init__(self, configs, device):
-        super(GPT4TS, self).__init__()
-        self.is_gpt = configs.is_gpt
-        self.patch_size = configs.patch_size
-        self.pretrain = configs.pretrain
-        self.stride = configs.stride
-        self.patch_num = (configs.seq_len - self.patch_size) // self.stride + 1
+        super(Model, self).__init__()
         self.pred_len = configs.pred_len
-
-        self.padding_patch_layer = nn.ReplicationPad1d((0, self.stride)) 
-        self.patch_num += 1
         
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM, 
@@ -132,36 +125,32 @@ class GPT4TS(nn.Module):
             lora_dropout=configs.lora_dropout,
             target_modules=["c_attn"]
         )
-        
-        if configs.is_gpt:
-            if configs.pretrain:
-                self.gpt2 = AccustumGPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True)  # loads a pretrained GPT-2 base model
-                self.gpt2_text = AccustumGPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True)  # loads a pretrained GPT-2 base model
-            else:
-                print("------------------no pretrain------------------")
-                self.gpt2 = GPT2Model(GPT2Config())
-            self.gpt2.h = self.gpt2.h[:configs.gpt_layers]
-            self.gpt2_text.h = self.gpt2_text.h[:configs.gpt_layers]
-            self.gpt2 = get_peft_model(self.gpt2, peft_config)
-            # print("gpt2 = {}".format(self.gpt2))
+    
+        self.task_name = configs.task_name
+    
+        self.gpt2 = AccustumGPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True)  # loads a pretrained GPT-2 base model
+        self.gpt2_text = AccustumGPT2Model.from_pretrained('gpt2', output_attentions=True, output_hidden_states=True)  # loads a pretrained GPT-2 base model
+
+        self.gpt2.h = self.gpt2.h[:configs.gpt_layers]
+        self.gpt2_text.h = self.gpt2_text.h[:configs.gpt_layers]
+        self.gpt2 = get_peft_model(self.gpt2, peft_config)
         
         word_embedding = torch.tensor(torch.load(configs.word_embedding_path)).to(device=device)
 
         self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, hidden_dim=configs.d_model)
         self.out_layer = nn.Linear(configs.d_model, configs.pred_len)
         
-        if configs.freeze and configs.pretrain:
-            for i, (name, param) in enumerate(self.gpt2.named_parameters()):
-                if 'ln' in name or 'wpe' in name or 'lora' in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-            
-            for i, (name, param) in enumerate(self.gpt2_text.named_parameters()):
-                if 'wpe' in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
+        for i, (name, param) in enumerate(self.gpt2.named_parameters()):
+            if 'ln' in name or 'wpe' in name or 'lora' in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+        
+        for i, (name, param) in enumerate(self.gpt2_text.named_parameters()):
+            if 'wpe' in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
 
         self.time_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model, bias=False) for _ in range(configs.gpt_layers+1)])
         
@@ -174,9 +163,7 @@ class GPT4TS(nn.Module):
         self.cnt = 0
         
 
-
-    def forward(self, x, itr):
-        
+    def forecast(self, x):
         B, L, M = x.shape
 
         means = x.mean(1, keepdim=True).detach()
@@ -187,9 +174,9 @@ class GPT4TS(nn.Module):
         x = rearrange(x, 'b l m -> b m l')
 
         outputs_time1, outputs1 = self.in_layer(x)
-        if self.is_gpt:
-            outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
-            outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs1)
+
+        outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
+        outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs1)
         # residue connection
         outputs_time += outputs_time1
         outputs_text += outputs1
@@ -212,3 +199,19 @@ class GPT4TS(nn.Module):
             'intermidiate_time':intermidiate_feat_time,
             'intermidiate_text':intermidiate_feat_text,
         }
+
+
+    def forward(self, x, mask=None):
+        if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+            dec_out = self.forecast(x)
+            return dec_out
+        # if self.task_name == 'imputation':
+        #     dec_out = self.imputation(x, mask)
+        #     return dec_out  # [B, L, D]
+        # if self.task_name == 'anomaly_detection':
+        #     dec_out = self.anomaly_detection(x)
+        #     return dec_out  # [B, L, D]
+        # if self.task_name == 'classification':
+        #     dec_out = self.classification(x)
+        #     return dec_out  # [B, N]
+        return None
