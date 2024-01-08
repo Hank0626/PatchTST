@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 
 seq_len=96
 model=GPT4TS
@@ -28,16 +28,17 @@ python main.py \
     --stride 8 \
     --percent $percent \
     --gpt_layer 6 \
-    --itr 3 \
+    --itr 1 \
     --model $model \
-    --patience 3 \
     --cos 1 \
     --tmax 10 \
     --is_gpt 1 \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 5 
+    --patience 5 \
+    --smooth
 
+echo '====================================================================================================================='
 done
 done
