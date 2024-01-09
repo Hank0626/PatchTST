@@ -157,7 +157,11 @@ class Model(nn.Module):
         
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
             self.out_layer = nn.Linear(configs.d_model, configs.pred_len)
-
+        elif self.task_name == 'classification':
+            self.out_layer = nn.Linear(configs.d_model * configs.enc_in, configs.num_class)
+        elif self.task_name == 'imputation':
+            self.out_layer = nn.Linear(configs.d_model, configs.seq_len)
+        
 
         for layer in (self.gpt2_text, self.gpt2, self.in_layer, self.out_layer, self.time_proj, self.text_proj):
             layer.to(device=device)
@@ -176,13 +180,13 @@ class Model(nn.Module):
 
         x = rearrange(x, 'b l m -> b m l')
 
-        outputs_time1, outputs1 = self.in_layer(x)
+        outputs_time1, outputs_text1 = self.in_layer(x)
 
         outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
-        outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs1)
+        outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs_text1)
         # residue connection
         outputs_time += outputs_time1
-        outputs_text += outputs1
+        outputs_text += outputs_text1
         
         intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
         intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
@@ -204,17 +208,81 @@ class Model(nn.Module):
         }
 
 
+    def classification(self, x):
+        B, L, M = x.shape
+
+        x = rearrange(x, 'b l m -> b m l')
+        
+        outputs_time1, outputs_text1 = self.in_layer(x)
+        
+        outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
+        outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs_text1)
+        
+        outputs_time += outputs_time1
+        outputs_text += outputs_text1
+        
+        intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
+        intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
+        
+        outputs_time = outputs_time.reshape(B, -1)
+        outputs_text = outputs_text.reshape(B, -1)
+        
+        outputs_time = self.out_layer(outputs_time)
+        outputs_text = self.out_layer(outputs_text)
+        
+        return {
+            'outputs_text': outputs_text,
+            'outputs_time':outputs_time,
+            'intermidiate_time':intermidiate_feat_time,
+            'intermidiate_text':intermidiate_feat_text,
+        }
+    
+
+    def imputation(self, x, mask):
+        B, L, M = x.shape
+
+        means = x.mean(1, keepdim=True).detach()
+        x = x - means
+        x = x.masked_fill(mask == 0, 0)
+
+        stdev = torch.sqrt(torch.sum(x**2, dim=1) / torch.sum(mask == 1, dim=1) + 1e-5).unsqueeze(1).detach()
+        x /= stdev
+
+        x = rearrange(x, 'b l m -> b m l')
+
+        outputs_time1, outputs_text1 = self.in_layer(x)
+
+        outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
+        outputs_text, intermidiate_feat_text = self.gpt2_text(inputs_embeds=outputs_text1)
+        # residue connection
+        outputs_time += outputs_time1
+        outputs_text += outputs_text1
+        
+        intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
+        intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
+
+        outputs_time = self.out_layer(outputs_time[:, -M:, :])
+        outputs_text = self.out_layer(outputs_text[:, -M:, :])
+
+        outputs_time = rearrange(outputs_time, 'b m l -> b l m')
+        outputs_text = rearrange(outputs_text, 'b m l -> b l m')
+
+        outputs_text = outputs_text * stdev + means
+        outputs_time = outputs_time * stdev + means
+
+        return {
+            'outputs_text': outputs_text,
+            'outputs_time':outputs_time,
+            'intermidiate_time':intermidiate_feat_time,
+            'intermidiate_text':intermidiate_feat_text,
+        }
+         
+
     def forward(self, x, mask=None):
         if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
-            dec_out = self.forecast(x)
-            return dec_out
-        # if self.task_name == 'imputation':
-        #     dec_out = self.imputation(x, mask)
-        #     return dec_out  # [B, L, D]
-        # if self.task_name == 'anomaly_detection':
-        #     dec_out = self.anomaly_detection(x)
-        #     return dec_out  # [B, L, D]
-        # if self.task_name == 'classification':
-        #     dec_out = self.classification(x)
-        #     return dec_out  # [B, N]
-        return None
+            output = self.forecast(x)
+        if self.task_name == 'classification':
+            output = self.classification(x)
+        if self.task_name == "imputation":
+            output = self.imputation(x, mask)
+        return output

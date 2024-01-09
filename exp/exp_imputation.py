@@ -2,6 +2,7 @@ from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
+from utils.distillationLoss import DistillationLoss
 import torch
 import torch.nn as nn
 from torch import optim
@@ -18,7 +19,7 @@ class Exp_Imputation(Exp_Basic):
         super(Exp_Imputation, self).__init__(args)
 
     def _build_model(self):
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        model = self.model_dict[self.args.model].Model(self.args, self.device).float()
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -29,46 +30,28 @@ class Exp_Imputation(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
-        return model_optim
+        param_dict = [
+            {"params": [p for n, p in self.model.named_parameters() if p.requires_grad and '_proj' in n], "lr": 1e-4},
+            {"params": [p for n, p in self.model.named_parameters() if p.requires_grad and '_proj' not in n], "lr": self.args.learning_rate}
+        ]
+        model_optim = optim.Adam([param_dict[1]], lr=self.args.learning_rate)
+        loss_optim = optim.Adam([param_dict[0]], lr=self.args.learning_rate)
+
+        return model_optim, loss_optim
 
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        criterion = DistillationLoss(self.args.distill_loss, 
+                                     self.args.logits_loss, 
+                                     self.args.task_loss, 
+                                     self.args.task_name, 
+                                     self.args.feature_w, 
+                                     self.args.logits_w, 
+                                     self.args.task_w)
         return criterion
 
-    def vali(self, vali_data, vali_loader, criterion):
-        total_loss = []
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
-                batch_x = batch_x.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
-
-                # random mask
-                B, T, N = batch_x.shape
-                """
-                B = batch size
-                T = seq len
-                N = number of features
-                """
-                mask = torch.rand((B, T, N)).to(self.device)
-                mask[mask <= self.args.mask_rate] = 0  # masked
-                mask[mask > self.args.mask_rate] = 1  # remained
-                inp = batch_x.masked_fill(mask == 0, 0)
-
-                outputs = self.model(inp, batch_x_mark, None, None, mask)
-
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, :, f_dim:]
-                pred = outputs.detach().cpu()
-                true = batch_x.detach().cpu()
-                mask = mask.detach().cpu()
-
-                loss = criterion(pred[mask == 0], true[mask == 0])
-                total_loss.append(loss)
-        total_loss = np.average(total_loss)
-        self.model.train()
-        return total_loss
+    def _select_vali_criterion(self):
+        criterion = nn.MSELoss()
+        return criterion
 
     def train(self, setting):
         train_data, train_loader = self._get_data(flag='train')
@@ -84,7 +67,7 @@ class Exp_Imputation(Exp_Basic):
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
-        model_optim = self._select_optimizer()
+        model_optim, loss_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
         for epoch in range(self.args.train_epochs):
@@ -98,7 +81,6 @@ class Exp_Imputation(Exp_Basic):
                 model_optim.zero_grad()
 
                 batch_x = batch_x.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
 
                 # random mask
                 B, T, N = batch_x.shape
@@ -107,11 +89,12 @@ class Exp_Imputation(Exp_Basic):
                 mask[mask > self.args.mask_rate] = 1  # remained
                 inp = batch_x.masked_fill(mask == 0, 0)
 
-                outputs = self.model(inp, batch_x_mark, None, None, mask)
-
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, :, f_dim:]
-                loss = criterion(outputs[mask == 0], batch_x[mask == 0])
+                outputs = self.model(inp, mask)
+            
+                outputs["outputs_time"] = outputs["outputs_time"][mask == 0]
+                outputs["outputs_text"] = outputs["outputs_text"][mask == 0]
+            
+                loss = criterion(outputs, batch_x[mask == 0])
                 train_loss.append(loss.item())
 
                 if (i + 1) % 100 == 0:
@@ -124,11 +107,12 @@ class Exp_Imputation(Exp_Basic):
 
                 loss.backward()
                 model_optim.step()
+                loss_optim.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+            vali_loss = self.vali(vali_data, vali_loader, self._select_vali_criterion())
+            test_loss = self.vali(test_data, test_loader, self._select_vali_criterion())
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
@@ -142,6 +126,46 @@ class Exp_Imputation(Exp_Basic):
         self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
+
+    def vali(self, vali_data, vali_loader, criterion):
+        total_loss = []
+        
+        self.model.in_layer.eval()
+        self.model.out_layer.eval()
+        self.model.time_proj.eval()
+        self.model.text_proj.eval()        
+
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+                batch_x = batch_x.float().to(self.device)
+
+                # random mask
+                B, T, N = batch_x.shape
+                """
+                B = batch size
+                T = seq len
+                N = number of features
+                """
+                mask = torch.rand((B, T, N)).to(self.device)
+                mask[mask <= self.args.mask_rate] = 0  # masked
+                mask[mask > self.args.mask_rate] = 1  # remained
+                inp = batch_x.masked_fill(mask == 0, 0)
+
+                outputs = self.model(inp, mask)["outputs_time"]
+
+                pred = outputs.detach().cpu()
+                true = batch_x.detach().cpu()
+                mask = mask.detach().cpu()
+
+                loss = criterion(pred[mask == 0], true[mask == 0])
+                total_loss.append(loss)
+        total_loss = np.average(total_loss)
+
+        self.model.in_layer.train()
+        self.model.out_layer.train()
+        self.model.time_proj.train()
+        self.model.text_proj.train()
+        return total_loss
 
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
@@ -160,7 +184,6 @@ class Exp_Imputation(Exp_Basic):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
 
                 # random mask
                 B, T, N = batch_x.shape
@@ -170,11 +193,9 @@ class Exp_Imputation(Exp_Basic):
                 inp = batch_x.masked_fill(mask == 0, 0)
 
                 # imputation
-                outputs = self.model(inp, batch_x_mark, None, None, mask)
+                outputs = self.model(inp, mask)["outputs_time"]
 
                 # eval
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, :, f_dim:]
                 outputs = outputs.detach().cpu().numpy()
                 pred = outputs
                 true = batch_x.detach().cpu().numpy()
@@ -182,11 +203,11 @@ class Exp_Imputation(Exp_Basic):
                 trues.append(true)
                 masks.append(mask.detach().cpu())
 
-                if i % 20 == 0:
-                    filled = true[0, :, -1].copy()
-                    filled = filled * mask[0, :, -1].detach().cpu().numpy() + \
-                             pred[0, :, -1] * (1 - mask[0, :, -1].detach().cpu().numpy())
-                    visual(true[0, :, -1], filled, os.path.join(folder_path, str(i) + '.pdf'))
+                # if i % 20 == 0:
+                #     filled = true[0, :, -1].copy()
+                #     filled = filled * mask[0, :, -1].detach().cpu().numpy() + \
+                #              pred[0, :, -1] * (1 - mask[0, :, -1].detach().cpu().numpy())
+                #     visual(true[0, :, -1], filled, os.path.join(folder_path, str(i) + '.pdf'))
 
         preds = np.concatenate(preds, 0)
         trues = np.concatenate(trues, 0)

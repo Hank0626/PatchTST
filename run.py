@@ -109,8 +109,10 @@ if __name__ == '__main__':
     # align
     parser.add_argument('--word_embedding_path', type=str, default="wte_pca_500.pt")
 
-    # smooth L1
-    parser.add_argument('--smooth', action="store_true")
+    # loss weight
+    parser.add_argument('--task_w', type=float, default=1.0)
+    parser.add_argument('--feature_w', type=float, default=0.01)
+    parser.add_argument('--logits_w', type=float, default=1.0)
     
     # gpt
     parser.add_argument('--gpt_layers', type=int, default=32, help='number of hidden layers in gpt')

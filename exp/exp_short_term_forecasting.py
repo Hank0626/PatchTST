@@ -47,8 +47,14 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
         return model_optim, loss_optim
 
-    def _select_criterion(self, distill_loss, logits_loss, task_loss, task_name):
-        criterion = DistillationLoss(distill_loss, logits_loss, task_loss, task_name)
+    def _select_criterion(self):
+        criterion = DistillationLoss(self.args.distill_loss, 
+                                     self.args.logits_loss, 
+                                     self.args.task_loss, 
+                                     self.args.task_name, 
+                                     self.args.feature_w, 
+                                     self.args.logits_w, 
+                                     self.args.task_w)
         return criterion
     
     def _select_vali_criterion(self, task_loss):
@@ -74,7 +80,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
         model_optim, loss_optim = self._select_optimizer()
-        criterion = self._select_criterion(self.args.distill_loss, self.args.logits_loss, self.args.task_loss, self.args.task_name)
+        criterion = self._select_criterion()
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=self.args.tmax, eta_min=1e-8)
 

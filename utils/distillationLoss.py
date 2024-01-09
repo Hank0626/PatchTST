@@ -9,6 +9,7 @@ from .losses import mape_loss, mase_loss, smape_loss
 loss_dict = {
     "l1": nn.L1Loss(),
     "smooth_l1": nn.SmoothL1Loss(),
+    "ce": nn.CrossEntropyLoss(),
     "mse": nn.MSELoss(),
     "smape": smape_loss(),
     "mape": mape_loss(),
@@ -17,8 +18,10 @@ loss_dict = {
 
 
 class DistillationLoss(nn.Module):
-    def __init__(self, distill_loss, logits_loss, task_loss, task_name, feature_w=0.01):
+    def __init__(self, distill_loss, logits_loss, task_loss, task_name, feature_w=0.01, logits_w=1.0, task_w=1.0):
         super(DistillationLoss, self).__init__()
+        self.task_w = task_w
+        self.logits_w = logits_w
         self.feature_w = feature_w
 
         self.feature_loss = loss_dict[distill_loss]
@@ -54,15 +57,22 @@ class DistillationLoss(nn.Module):
             logits_loss = self.logits_loss(outputs_time, outputs_text)
         elif self.task_name == "short_term_forecast":
             logits_loss = self.logits_loss(in_sample, freq_map, outputs_time, outputs_text, batch_y_mark)
-
+        elif self.task_name == "classification":
+            logits_loss = self.logits_loss(outputs_time, outputs_text)
+        elif self.task_name == "imputation":
+            logits_loss = self.logits_loss(outputs_time, outputs_text)
+            
         # 3----------------任务特定的标签损失
-        outputs_time = outputs_time
         batch_y = batch_y.to(logits_loss.device)
         
         if self.task_name == "long_term_forecast":
             task_loss = self.task_loss(outputs_time, batch_y)
         elif self.task_name == "short_term_forecast":
             task_loss = self.task_loss(in_sample, freq_map, outputs_time, batch_y, batch_y_mark)
+        elif self.task_name == "classification":
+            task_loss = self.task_loss(outputs_time, batch_y)
+        elif self.task_name == "imputation":
+            task_loss = self.task_loss(outputs_time, batch_y)
 
-        total_loss = task_loss + logits_loss + self.feature_w * feature_loss
+        total_loss = self.task_w * task_loss + self.logits_w * logits_loss + self.feature_w * feature_loss
         return total_loss

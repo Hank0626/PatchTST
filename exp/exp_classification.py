@@ -1,6 +1,7 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, cal_accuracy
+from utils.distillationLoss import DistillationLoss
 import torch
 import torch.nn as nn
 from torch import optim
@@ -26,7 +27,7 @@ class Exp_Classification(Exp_Basic):
         self.args.enc_in = train_data.feature_df.shape[1]
         self.args.num_class = len(train_data.class_names)
         # model init
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        model = self.model_dict[self.args.model].Model(self.args, self.device).float()
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
@@ -36,25 +37,45 @@ class Exp_Classification(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
-        return model_optim
+        param_dict = [
+            {"params": [p for n, p in self.model.named_parameters() if p.requires_grad and '_proj' in n], "lr": 1e-4},
+            {"params": [p for n, p in self.model.named_parameters() if p.requires_grad and '_proj' not in n], "lr": self.args.learning_rate}
+        ]
+        model_optim = optim.Adam([param_dict[1]], lr=self.args.learning_rate)
+        loss_optim = optim.Adam([param_dict[0]], lr=self.args.learning_rate)
+
+        return model_optim, loss_optim
 
     def _select_criterion(self):
-        criterion = nn.CrossEntropyLoss()
+        criterion = DistillationLoss(self.args.distill_loss, 
+                                     self.args.logits_loss, 
+                                     self.args.task_loss, 
+                                     self.args.task_name, 
+                                     self.args.feature_w, 
+                                     self.args.logits_w, 
+                                     self.args.task_w)
         return criterion
+
+    def _select_vali_criterion(self):
+        return nn.CrossEntropyLoss()
 
     def vali(self, vali_data, vali_loader, criterion):
         total_loss = []
         preds = []
         trues = []
-        self.model.eval()
+
+        self.model.in_layer.eval()
+        self.model.out_layer.eval()
+        self.model.time_proj.eval()
+        self.model.text_proj.eval()
+
         with torch.no_grad():
             for i, (batch_x, label, padding_mask) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
                 padding_mask = padding_mask.float().to(self.device)
                 label = label.to(self.device)
 
-                outputs = self.model(batch_x, padding_mask, None, None)
+                outputs = self.model(batch_x, padding_mask)["outputs_time"]
 
                 pred = outputs.detach().cpu()
                 loss = criterion(pred, label.long().squeeze().cpu())
@@ -72,7 +93,10 @@ class Exp_Classification(Exp_Basic):
         trues = trues.flatten().cpu().numpy()
         accuracy = cal_accuracy(predictions, trues)
 
-        self.model.train()
+        self.model.in_layer.train()
+        self.model.out_layer.train()
+        self.model.time_proj.train()
+        self.model.text_proj.train()
         return total_loss, accuracy
 
     def train(self, setting):
@@ -89,7 +113,7 @@ class Exp_Classification(Exp_Basic):
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
-        model_optim = self._select_optimizer()
+        model_optim, loss_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
         for epoch in range(self.args.train_epochs):
@@ -100,14 +124,16 @@ class Exp_Classification(Exp_Basic):
             epoch_time = time.time()
 
             for i, (batch_x, label, padding_mask) in enumerate(train_loader):
+
                 iter_count += 1
                 model_optim.zero_grad()
+                loss_optim.zero_grad()
 
                 batch_x = batch_x.float().to(self.device)
-                padding_mask = padding_mask.float().to(self.device)
                 label = label.to(self.device)
 
-                outputs = self.model(batch_x, padding_mask, None, None)
+                outputs = self.model(batch_x)
+
                 loss = criterion(outputs, label.long().squeeze(-1))
                 train_loss.append(loss.item())
 
@@ -122,11 +148,12 @@ class Exp_Classification(Exp_Basic):
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=4.0)
                 model_optim.step()
+                loss_optim.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss, val_accuracy = self.vali(vali_data, vali_loader, criterion)
-            test_loss, test_accuracy = self.vali(test_data, test_loader, criterion)
+            vali_loss, val_accuracy = self.vali(vali_data, vali_loader, self._select_vali_criterion())
+            test_loss, test_accuracy = self.vali(test_data, test_loader, self._select_vali_criterion())
 
             print(
                 "Epoch: {0}, Steps: {1} | Train Loss: {2:.3f} Vali Loss: {3:.3f} Vali Acc: {4:.3f} Test Loss: {5:.3f} Test Acc: {6:.3f}"
@@ -162,7 +189,7 @@ class Exp_Classification(Exp_Basic):
                 padding_mask = padding_mask.float().to(self.device)
                 label = label.to(self.device)
 
-                outputs = self.model(batch_x, padding_mask, None, None)
+                outputs = self.model(batch_x, padding_mask)["outputs_time"]
 
                 preds.append(outputs.detach())
                 trues.append(label)

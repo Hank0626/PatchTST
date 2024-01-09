@@ -57,3 +57,8 @@ def print_args(args):
     p_hidden_dims_str = ', '.join(map(str, args.p_hidden_dims))
     print(f'  {"P Hidden Dims:":<20}{p_hidden_dims_str:<20}{"P Hidden Layers:":<20}{args.p_hidden_layers:<20}') 
     print()
+
+    print("\033[1m" + "Distill Loss Weight" + "\033[0m")
+    p_hidden_dims_str = ', '.join(map(str, args.p_hidden_dims))
+    print(f'  {"Feature Weight:":<20}{args.feature_w:<20}{"Logits Weight:":<20}{args.logits_w:<20}{"Task Weight:":<20}{args.task_w:<20}') 
+    print()
