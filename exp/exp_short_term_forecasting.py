@@ -4,6 +4,7 @@ from exp.exp_basic import Exp_Basic
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.losses import mape_loss, mase_loss, smape_loss
 from utils.m4_summary import M4Summary
+from utils.distillationLoss import DistillationLoss
 import torch
 import torch.nn as nn
 from torch import optim
@@ -26,7 +27,7 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             self.args.seq_len = 2 * self.args.pred_len  # input_len = 2*pred_len
             self.args.label_len = self.args.pred_len
             self.args.frequency_map = M4Meta.frequency_map[self.args.seasonal_patterns]
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        model = self.model_dict[self.args.model].Model(self.args, self.device).float()
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -37,18 +38,27 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
-        return model_optim
+        param_dict = [
+            {"params": [p for n, p in self.model.named_parameters() if p.requires_grad and '_proj' in n], "lr": 1e-4},
+            {"params": [p for n, p in self.model.named_parameters() if p.requires_grad and '_proj' not in n], "lr": self.args.learning_rate}
+        ]
+        model_optim = optim.Adam([param_dict[1]], lr=self.args.learning_rate)
+        loss_optim = optim.Adam([param_dict[0]], lr=self.args.learning_rate)
 
-    def _select_criterion(self, loss_name='MSE'):
-        if loss_name == 'MSE':
-            return nn.MSELoss()
-        elif loss_name == 'MAPE':
-            return mape_loss()
-        elif loss_name == 'MASE':
-            return mase_loss()
-        elif loss_name == 'SMAPE':
-            return smape_loss()
+        return model_optim, loss_optim
+
+    def _select_criterion(self, distill_loss, logits_loss, task_loss, task_name):
+        criterion = DistillationLoss(distill_loss, logits_loss, task_loss, task_name)
+        return criterion
+    
+    def _select_vali_criterion(self, task_loss):
+        if task_loss == 'mape':
+            criterion = mape_loss()
+        elif task_loss == 'mase':
+            criterion = mase_loss()
+        elif task_loss == 'smape':
+            criterion = smape_loss()
+        return criterion
 
     def train(self, setting):
         train_data, train_loader = self._get_data(flag='train')
@@ -63,9 +73,10 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
-        model_optim = self._select_optimizer()
-        criterion = self._select_criterion(self.args.loss)
-        mse = nn.MSELoss()
+        model_optim, loss_optim = self._select_optimizer()
+        criterion = self._select_criterion(self.args.distill_loss, self.args.logits_loss, self.args.task_loss, self.args.task_name)
+
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=self.args.tmax, eta_min=1e-8)
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -74,27 +85,20 @@ class Exp_Short_Term_Forecast(Exp_Basic):
             self.model.train()
             epoch_time = time.time()
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
-                import pdb; pdb.set_trace()
                 iter_count += 1
                 model_optim.zero_grad()
+                loss_optim.zero_grad()
+
                 batch_x = batch_x.float().to(self.device)
-
                 batch_y = batch_y.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
 
-                # decoder input
-                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                outputs_dict = self.model(batch_x)
 
-                outputs = self.model(batch_x, None, dec_inp, None)
+                batch_y = batch_y[:, -self.args.pred_len:].to(self.device)
+                batch_y_mark = batch_y_mark[:, -self.args.pred_len:].to(self.device)
+                
+                loss_value = criterion(outputs_dict, batch_y, batch_x, self.args.frequency_map, batch_y_mark)
 
-                f_dim = -1 if self.args.features == 'MS' else 0
-                outputs = outputs[:, -self.args.pred_len:, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
-
-                batch_y_mark = batch_y_mark[:, -self.args.pred_len:, f_dim:].to(self.device)
-                loss_value = criterion(batch_x, self.args.frequency_map, outputs, batch_y, batch_y_mark)
-                loss_sharpness = mse((outputs[:, 1:, :] - outputs[:, :-1, :]), (batch_y[:, 1:, :] - batch_y[:, :-1, :]))
                 loss = loss_value  # + loss_sharpness * 1e-5
                 train_loss.append(loss.item())
 
@@ -108,19 +112,25 @@ class Exp_Short_Term_Forecast(Exp_Basic):
 
                 loss.backward()
                 model_optim.step()
+                loss_optim.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(train_loader, vali_loader, criterion)
+            vali_loss = self.vali(train_loader, vali_loader, self._select_vali_criterion("smape"))
             test_loss = vali_loss
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            
+            if self.args.cos:
+                scheduler.step()
+                print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
+            else:
+                adjust_learning_rate(model_optim, epoch + 1, self.args)
+            
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
-
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
@@ -133,29 +143,33 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         x = torch.tensor(x, dtype=torch.float32).to(self.device)
         x = x.unsqueeze(-1)
 
-        self.model.eval()
+        self.model.in_layer.eval()
+        self.model.out_layer.eval()
+        self.model.time_proj.eval()
+        self.model.text_proj.eval()
+
         with torch.no_grad():
             # decoder input
             B, _, C = x.shape
-            dec_inp = torch.zeros((B, self.args.pred_len, C)).float().to(self.device)
-            dec_inp = torch.cat([x[:, -self.args.label_len:, :], dec_inp], dim=1).float()
+
             # encoder - decoder
             outputs = torch.zeros((B, self.args.pred_len, C)).float()  # .to(self.device)
             id_list = np.arange(0, B, 500)  # validation set size
             id_list = np.append(id_list, B)
+
             for i in range(len(id_list) - 1):
-                outputs[id_list[i]:id_list[i + 1], :, :] = self.model(x[id_list[i]:id_list[i + 1]], None,
-                                                                      dec_inp[id_list[i]:id_list[i + 1]],
-                                                                      None).detach().cpu()
-            f_dim = -1 if self.args.features == 'MS' else 0
-            outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                outputs[id_list[i]:id_list[i + 1], :, :] = self.model(x[id_list[i]:id_list[i + 1]])["outputs_time"].detach().cpu()
+
             pred = outputs
             true = torch.from_numpy(np.array(y))
             batch_y_mark = torch.ones(true.shape)
 
             loss = criterion(x.detach().cpu()[:, :, 0], self.args.frequency_map, pred[:, :, 0], true, batch_y_mark)
 
-        self.model.train()
+        self.model.in_layer.train()
+        self.model.out_layer.train()
+        self.model.time_proj.train()
+        self.model.text_proj.train()
         return loss
 
     def test(self, setting, test=0):
@@ -177,15 +191,13 @@ class Exp_Short_Term_Forecast(Exp_Basic):
         self.model.eval()
         with torch.no_grad():
             B, _, C = x.shape
-            dec_inp = torch.zeros((B, self.args.pred_len, C)).float().to(self.device)
-            dec_inp = torch.cat([x[:, -self.args.label_len:, :], dec_inp], dim=1).float()
+
             # encoder - decoder
             outputs = torch.zeros((B, self.args.pred_len, C)).float().to(self.device)
-            id_list = np.arange(0, B, 1)
+            id_list = np.arange(0, B, 500)
             id_list = np.append(id_list, B)
             for i in range(len(id_list) - 1):
-                outputs[id_list[i]:id_list[i + 1], :, :] = self.model(x[id_list[i]:id_list[i + 1]], None,
-                                                                      dec_inp[id_list[i]:id_list[i + 1]], None)
+                outputs[id_list[i]:id_list[i + 1], :, :] = self.model(x[id_list[i]:id_list[i + 1]])["outputs_time"]
 
                 if id_list[i] % 1000 == 0:
                     print(id_list[i])

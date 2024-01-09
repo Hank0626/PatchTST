@@ -40,48 +40,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         return model_optim, loss_optim
 
-    def _select_criterion(self):
-        criterion = DistillationLoss(self.args)
+    def _select_criterion(self, distill_loss, logits_loss, task_loss):
+        criterion = DistillationLoss(distill_loss, logits_loss, task_loss)
         return criterion
-
-    def vali(self, vali_data, vali_loader, criterion):
-        total_loss = []
-
-        self.model.in_layer.eval()
-        self.model.out_layer.eval()
-        self.model.time_proj.eval()
-        self.model.text_proj.eval()
-
-        with torch.no_grad():
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float()
-
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
-
-                outputs = self.model(batch_x)
-                # TODO 目前只是选择时序模态作为最终最终的输出
-                outputs_ensemble = outputs['outputs_time']
-                # encoder - decoder
-                outputs_ensemble = outputs_ensemble[:, -self.args.pred_len:, :]
-                batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
-
-                pred = outputs_ensemble.detach().cpu()
-                true = batch_y.detach().cpu()
-                # TODO 验证集的损失函数并不包含蒸馏损失
-                loss = F.mse_loss(pred, true)
-
-                total_loss.append(loss)
-            
-        total_loss = np.average(total_loss)
-
-        self.model.in_layer.train()
-        self.model.out_layer.train()
-        self.model.time_proj.train()
-        self.model.text_proj.train()
-
-        return total_loss
 
     def train(self, setting):
         train_data, train_loader = self._get_data(flag='train')
@@ -98,7 +59,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
         model_optim, loss_optim = self._select_optimizer()
-        criterion = self._select_criterion()
+        criterion = self._select_criterion(self.args.task_loss, self.args.distill_loss, self.args.logits_loss)
         
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=self.args.tmax, eta_min=1e-8)
 
@@ -115,8 +76,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)
-                batch_x_mark = batch_x_mark.float().to(self.device)
-                batch_y_mark = batch_y_mark.float().to(self.device)
                 
                 outputs_dict = self.model(batch_x)
 
@@ -160,6 +119,45 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
+
+    def vali(self, vali_data, vali_loader, criterion):
+        total_loss = []
+
+        self.model.in_layer.eval()
+        self.model.out_layer.eval()
+        self.model.time_proj.eval()
+        self.model.text_proj.eval()
+
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+                batch_x = batch_x.float().to(self.device)
+                batch_y = batch_y.float()
+
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                batch_y_mark = batch_y_mark.float().to(self.device)
+
+                outputs = self.model(batch_x)
+                # TODO 目前只是选择时序模态作为最终最终的输出
+                outputs_ensemble = outputs['outputs_time']
+                # encoder - decoder
+                outputs_ensemble = outputs_ensemble[:, -self.args.pred_len:, :]
+                batch_y = batch_y[:, -self.args.pred_len:, :].to(self.device)
+
+                pred = outputs_ensemble.detach().cpu()
+                true = batch_y.detach().cpu()
+                # TODO 验证集的损失函数并不包含蒸馏损失
+                loss = F.mse_loss(pred, true)
+
+                total_loss.append(loss)
+
+        total_loss = np.average(total_loss)
+
+        self.model.in_layer.train()
+        self.model.out_layer.train()
+        self.model.time_proj.train()
+        self.model.text_proj.train()
+
+        return total_loss
 
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')

@@ -136,9 +136,6 @@ class Model(nn.Module):
         self.gpt2 = get_peft_model(self.gpt2, peft_config)
         
         word_embedding = torch.tensor(torch.load(configs.word_embedding_path)).to(device=device)
-
-        self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, hidden_dim=configs.d_model)
-        self.out_layer = nn.Linear(configs.d_model, configs.pred_len)
         
         for i, (name, param) in enumerate(self.gpt2.named_parameters()):
             if 'ln' in name or 'wpe' in name or 'lora' in name:
@@ -155,6 +152,12 @@ class Model(nn.Module):
         self.time_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model, bias=False) for _ in range(configs.gpt_layers+1)])
         
         self.text_proj = nn.ModuleList([nn.Linear(configs.d_model, configs.d_model, bias=False) for _ in range(configs.gpt_layers+1)])
+
+        self.in_layer = Encoder_PCA(configs.seq_len, word_embedding, hidden_dim=configs.d_model)
+        
+        if self.task_name == 'long_term_forecast' or self.task_name == 'short_term_forecast':
+            self.out_layer = nn.Linear(configs.d_model, configs.pred_len)
+
 
         for layer in (self.gpt2_text, self.gpt2, self.in_layer, self.out_layer, self.time_proj, self.text_proj):
             layer.to(device=device)
