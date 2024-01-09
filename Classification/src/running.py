@@ -418,7 +418,7 @@ class SupervisedRunner(BaseRunner):
             outputs_text_softmax = F.softmax(outputs_text,dim=-1)
             loss_logits = F.kl_div(outputs_time_log_softmax,outputs_text_softmax,reduction='batchmean')
             # -------------4. total loss------------------
-            mean_loss = loss_label + 0.01*loss_feature + loss_logits
+            mean_loss = loss_label + 0.01*loss_feature #+ loss_logits
 
             if self.l2_reg:
                 total_loss = mean_loss + self.l2_reg * l2_reg_loss(self.model)
@@ -441,7 +441,7 @@ class SupervisedRunner(BaseRunner):
             with torch.no_grad():
                 epoch_loss += total_loss.item()  # add total loss of batch
 
-        epoch_loss = epoch_loss / total_samples  # average loss per sample for whole epoch
+        epoch_loss = epoch_loss  # average loss per sample for whole epoch
         self.epoch_metrics['epoch'] = epoch_num
         self.epoch_metrics['loss'] = epoch_loss
         return self.epoch_metrics

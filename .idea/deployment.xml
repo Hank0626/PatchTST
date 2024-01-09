@@ -17,6 +17,13 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="guohang@10.103.11.104:22 password">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="guohang@10.103.11.108:22 password">
         <serverdata>
           <mappings>
