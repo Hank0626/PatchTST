@@ -61,6 +61,8 @@ class DistillationLoss(nn.Module):
             logits_loss = self.logits_loss(outputs_time, outputs_text)
         elif self.task_name == "imputation":
             logits_loss = self.logits_loss(outputs_time, outputs_text)
+        elif self.task_name == "anomaly_detection":
+            logits_loss = self.logits_loss(outputs_time, outputs_text)
             
         # 3----------------任务特定的标签损失
         batch_y = batch_y.to(logits_loss.device)
@@ -72,6 +74,8 @@ class DistillationLoss(nn.Module):
         elif self.task_name == "classification":
             task_loss = self.task_loss(outputs_time, batch_y)
         elif self.task_name == "imputation":
+            task_loss = self.task_loss(outputs_time, batch_y)
+        elif self.task_name == "anomaly_detection":
             task_loss = self.task_loss(outputs_time, batch_y)
 
         total_loss = self.task_w * task_loss + self.logits_w * logits_loss + self.feature_w * feature_loss
