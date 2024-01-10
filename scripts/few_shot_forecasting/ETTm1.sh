@@ -3,20 +3,23 @@ export CUDA_VISIBLE_DEVICES=0
 seq_len=96
 model=GPT4TS
 
+percent=100
 
-for pred_len in 720
+for gpt_layer in 6
+do
+for pred_len in 96 192 336 720
 do
 
 python main.py \
     --root_path ./datasets/ETT-small/ \
-    --data_path ETTh1.csv \
-    --is_training 1 \
-    --task_name long_term_forecast \
-    --model_id ETTh1_$seq_len'_'$pred_len \
-    --data ETTh1 \
+    --data_path ETTm1.csv \
+    --model_id ETTm1_$model'_'$gpt_layer'_'$seq_len'_'$pred_len'_'$percent \
+    --data ett_m \
     --seq_len $seq_len \
+    --label_len 0 \
     --pred_len $pred_len \
     --batch_size 256 \
+    --decay_fac 0.5 \
     --learning_rate 0.0005 \
     --lradj type1 \
     --train_epochs 100 \
@@ -26,14 +29,22 @@ python main.py \
     --dropout 0.3 \
     --enc_in 7 \
     --c_out 7 \
-    --gpt_layer 6 \
+    --freq 0 \
+    --patch_size 16 \
+    --stride 8 \
+    --percent $percent \
+    --gpt_layer $gpt_layer \
     --itr 1 \
     --model $model \
+    --cos 1 \
+    --tmax 20 \
     --pretrain 1 \
+    --is_gpt 1 \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 10
+    --patience 5
 
 echo '====================================================================================================================='
+done
 done

@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 seq_len=96
 model=GPT4TS
@@ -16,7 +16,7 @@ python run.py \
     --seq_len $seq_len \
     --mask_rate $mask_rate \
     --batch_size 256 \
-    --learning_rate 0.0001 \
+    --learning_rate 0.001 \
     --lradj type1 \
     --train_epochs 100 \
     --d_model 768 \
@@ -34,9 +34,11 @@ python run.py \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
     --patience 10 \
-    --task_loss mse \
+    --task_loss l1 \
     --logits_loss l1 \
     --distill_loss l1 \
+    --feature_w 0 \
+    --logits_w 0
 
 echo '====================================================================================================================='
 

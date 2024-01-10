@@ -1,0 +1,30 @@
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9649, Precision : 0.8975, Recall : 0.7536, F-score : 0.8193 
+
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9646, Precision : 0.8968, Recall : 0.7509, F-score : 0.8174 
+
+anomaly_detection_SMD_GPT4TS_SMD_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9824, Precision : 0.7644, Recall : 0.8339, F-score : 0.7976 
+
+anomaly_detection_SMD_GPT4TS_SMD_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9830, Precision : 0.7661, Recall : 0.8517, F-score : 0.8066 
+
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9025, Precision : 0.6320, Recall : 0.1805, F-score : 0.2808 
+
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9628, Precision : 0.8893, Recall : 0.7395, F-score : 0.8075 
+
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9650, Precision : 0.8978, Recall : 0.7539, F-score : 0.8196 
+
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9649, Precision : 0.8976, Recall : 0.7535, F-score : 0.8192 
+
+anomaly_detection_MSL_GPT4TS_MSL_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9649, Precision : 0.8974, Recall : 0.7534, F-score : 0.8191 
+
+anomaly_detection_SWAT_GPT4TS_SWAT_ftM_sl100_ll48_pl0_dm768_nh8_el1_dl1_df768_fc1_ebtimeF_dtTrue_test_gpt32_0  
+Accuracy : 0.9754, Precision : 0.9176, Recall : 0.8762, F-score : 0.8964 
+

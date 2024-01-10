@@ -64,10 +64,7 @@ class Exp_Classification(Exp_Basic):
         preds = []
         trues = []
 
-        self.model.in_layer.eval()
-        self.model.out_layer.eval()
-        self.model.time_proj.eval()
-        self.model.text_proj.eval()
+        self.model.eval()
 
         with torch.no_grad():
             for i, (batch_x, label, padding_mask) in enumerate(vali_loader):
@@ -93,10 +90,7 @@ class Exp_Classification(Exp_Basic):
         trues = trues.flatten().cpu().numpy()
         accuracy = cal_accuracy(predictions, trues)
 
-        self.model.in_layer.train()
-        self.model.out_layer.train()
-        self.model.time_proj.train()
-        self.model.text_proj.train()
+        self.model.train()
         return total_loss, accuracy
 
     def train(self, setting):
@@ -124,7 +118,6 @@ class Exp_Classification(Exp_Basic):
             epoch_time = time.time()
 
             for i, (batch_x, label, padding_mask) in enumerate(train_loader):
-
                 iter_count += 1
                 model_optim.zero_grad()
                 loss_optim.zero_grad()
@@ -146,7 +139,7 @@ class Exp_Classification(Exp_Basic):
                     time_now = time.time()
 
                 loss.backward()
-                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=4.0)
+                # nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=4.0)
                 model_optim.step()
                 loss_optim.step()
 

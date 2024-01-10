@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 seq_len=96
 model=GPT4TS
@@ -12,13 +12,13 @@ python run.py \
     --is_training 1 \
     --task_name imputation \
     --model_id electricity_mask_$mask_rate \
-    --data electricity \
+    --data custom \
     --seq_len $seq_len \
     --mask_rate $mask_rate \
-    --batch_size 64 \
+    --batch_size 32 \
     --learning_rate 0.0001 \
     --lradj type1 \
-    --train_epochs 100 \
+    --train_epochs 20 \
     --d_model 768 \
     --n_heads 4 \
     --d_ff 768 \
@@ -33,8 +33,8 @@ python run.py \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 10 \
-    --task_loss l1 \
+    --patience 3 \
+    --task_loss smooth_l1 \
     --logits_loss l1 \
     --distill_loss l1 \
     --feature_w 0 \

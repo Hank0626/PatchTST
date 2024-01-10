@@ -15,8 +15,8 @@ python run.py \
     --data ETTh2 \
     --seq_len $seq_len \
     --mask_rate $mask_rate \
-    --batch_size 64 \
-    --learning_rate 0.0001 \
+    --batch_size 256 \
+    --learning_rate 0.0005 \
     --lradj type1 \
     --train_epochs 100 \
     --d_model 768 \
@@ -28,8 +28,6 @@ python run.py \
     --gpt_layers 6 \
     --itr 1 \
     --model $model \
-    --tmax 20 \
-    --cos 1 \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
@@ -38,7 +36,7 @@ python run.py \
     --logits_loss l1 \
     --distill_loss l1 \
     --feature_w 0 \
-    --logits_w 0 
+    --logits_w 0
 
 echo '====================================================================================================================='
 

@@ -3,10 +3,6 @@ export CUDA_VISIBLE_DEVICES=0
 seq_len=96
 model=GPT4TS
 
-percent=100
-
-for gpt_layer in 6
-do
 for pred_len in 96 192 336 720
 do
 
@@ -15,7 +11,7 @@ python run.py \
     --data_path ETTh2.csv \
     --is_training 1 \
     --task_name long_term_forecast \
-    --model_id ETTh2_$seq_len'_'$pred_len \
+    --model_id ETTh2_$model'_'$seq_len'_'$pred_len \
     --data ETTh2 \
     --seq_len $seq_len \
     --label_len 0 \
@@ -41,5 +37,4 @@ python run.py \
     --patience 5
 
 echo '====================================================================================================================='
-done
 done

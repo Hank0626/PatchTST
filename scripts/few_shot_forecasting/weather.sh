@@ -3,22 +3,23 @@ export CUDA_VISIBLE_DEVICES=0
 seq_len=96
 model=GPT4TS
 
-
-for pred_len in 720
+for percent in 10
+do
+for pred_len in 96 192 336 720
 do
 
-python main.py \
-    --root_path ./datasets/ETT-small/ \
-    --data_path ETTh1.csv \
+python run.py \
+    --root_path ./datasets/weather/ \
+    --data_path weather.csv \
     --is_training 1 \
     --task_name long_term_forecast \
-    --model_id ETTh1_$seq_len'_'$pred_len \
-    --data ETTh1 \
+    --model_id weather_$model'_'$gpt_layer'_'$seq_len'_'$pred_len'_'$percent \
+    --data custom \
     --seq_len $seq_len \
+    --label_len 0 \
     --pred_len $pred_len \
-    --batch_size 256 \
-    --learning_rate 0.0005 \
-    --lradj type1 \
+    --batch_size 64 \
+    --learning_rate 0.0001 \
     --train_epochs 100 \
     --d_model 768 \
     --n_heads 4 \
@@ -26,14 +27,21 @@ python main.py \
     --dropout 0.3 \
     --enc_in 7 \
     --c_out 7 \
+    --lradj type3 \
+    --percent $percent \
     --gpt_layer 6 \
     --itr 1 \
     --model $model \
-    --pretrain 1 \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 10
+    --patience 5 \
+    --task_loss smooth_l1 \
+    --logits_loss smooth_l1 \
+    --distill_loss smooth_l1 \
+    --feature_w 0 \
+    --logits_w 0 \
 
 echo '====================================================================================================================='
+done
 done

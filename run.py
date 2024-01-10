@@ -116,6 +116,9 @@ if __name__ == '__main__':
     
     # gpt
     parser.add_argument('--gpt_layers', type=int, default=32, help='number of hidden layers in gpt')
+    
+    # few shot percentage
+    parser.add_argument('--percent', type=int, default=100, help='few shot percentage')
 
     args = parser.parse_args()
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False

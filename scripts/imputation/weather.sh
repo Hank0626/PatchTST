@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 seq_len=96
 model=GPT4TS
@@ -12,7 +12,7 @@ python run.py \
     --is_training 1 \
     --task_name imputation \
     --model_id weather_mask_$mask_rate \
-    --data weather \
+    --data custom \
     --seq_len $seq_len \
     --mask_rate $mask_rate \
     --batch_size 64 \

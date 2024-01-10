@@ -14,6 +14,8 @@ from peft import get_peft_config, get_peft_model, get_peft_model_state_dict, Lor
 from models.GPT2_arch import AccustumGPT2Model
 from transformers import AutoTokenizer
 
+from .Embed import DataEmbedding
+
 class Encoder_PCA(nn.Module):
     def __init__(self, input_dim, word_embedding, hidden_dim=768, num_heads=12, num_encoder_layers=1):
         super(Encoder_PCA, self).__init__()
@@ -133,7 +135,7 @@ class Model(nn.Module):
 
         self.gpt2.h = self.gpt2.h[:configs.gpt_layers]
         self.gpt2_text.h = self.gpt2_text.h[:configs.gpt_layers]
-        self.gpt2 = get_peft_model(self.gpt2, peft_config)
+        # self.gpt2 = get_peft_model(self.gpt2, peft_config)
         
         word_embedding = torch.tensor(torch.load(configs.word_embedding_path)).to(device=device)
         
@@ -213,7 +215,7 @@ class Model(nn.Module):
         B, L, M = x.shape
 
         x = rearrange(x, 'b l m -> b m l')
-        
+
         outputs_time1, outputs_text1 = self.in_layer(x)
         
         outputs_time, intermidiate_feat_time = self.gpt2(inputs_embeds=outputs_time1)
@@ -262,8 +264,8 @@ class Model(nn.Module):
         intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
         intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
 
-        outputs_time = self.out_layer(outputs_time[:, -M:, :])
-        outputs_text = self.out_layer(outputs_text[:, -M:, :])
+        outputs_time = self.out_layer(outputs_time)
+        outputs_text = self.out_layer(outputs_text)
 
         outputs_time = rearrange(outputs_time, 'b m l -> b l m')
         outputs_text = rearrange(outputs_text, 'b m l -> b l m')
@@ -299,8 +301,8 @@ class Model(nn.Module):
         intermidiate_feat_time = tuple([self.time_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_time))])
         intermidiate_feat_text = tuple([self.text_proj[idx](feat) for idx, feat in enumerate(list(intermidiate_feat_text))])
 
-        outputs_time = self.out_layer(outputs_time[:, -M:, :])
-        outputs_text = self.out_layer(outputs_text[:, -M:, :])
+        outputs_time = self.out_layer(outputs_time)
+        outputs_text = self.out_layer(outputs_text)
 
         outputs_time = rearrange(outputs_time, 'b m l -> b l m')
         outputs_text = rearrange(outputs_text, 'b m l -> b l m')
