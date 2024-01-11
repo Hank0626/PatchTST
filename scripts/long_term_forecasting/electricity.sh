@@ -6,7 +6,7 @@ model=GPT4TS
 for pred_len in 96 192 336 720
 do
 
-python main.py \
+python run.py \
     --root_path ./datasets/electricity/ \
     --data_path electricity.csv \
     --is_training 1 \
@@ -25,7 +25,6 @@ python main.py \
     --dropout 0.3 \
     --enc_in 7 \
     --c_out 7 \
-    --freq 0 \
     --gpt_layer 6 \
     --itr 1 \
     --model $model \

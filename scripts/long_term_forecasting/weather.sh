@@ -7,7 +7,7 @@ model=GPT4TS
 for pred_len in 96 192 336 720
 do
 
-python main.py \
+python run.py \
     --root_path ./datasets/weather/ \
     --data_path weather.csv \
     --is_training 1 \

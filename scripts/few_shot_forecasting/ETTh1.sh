@@ -1,14 +1,11 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=7
 
 seq_len=96
 model=GPT4TS
 
-
-percent=100
-
 # for gpt_layer in 6
 # do
-# for pred_len in 96 192 336
+# for pred_len in 96 192 336 720
 # do
 
 # python run.py \
@@ -39,16 +36,19 @@ percent=100
 #     --lora_dropout 0.1 \
 #     --patience 10 \
 #     --percent 10 \
-#     --feature_w 0 \
 #     --logits_w 0 \
-#     --task_loss smooth_l1 \
+#     --feature_w 0 \
+#     --task_loss smooth_l1
 
 # echo '====================================================================================================================='
 # done
 # done
 
-pred_len=720
-gpt_layer=6
+
+for gpt_layer in 6
+do
+for pred_len in 96 192 336 720
+do
 
 python run.py \
     --root_path ./datasets/ETT-small/ \
@@ -60,8 +60,8 @@ python run.py \
     --seq_len $seq_len \
     --label_len 0 \
     --pred_len $pred_len \
-    --batch_size 32 \
-    --learning_rate 0.00001 \
+    --batch_size 256 \
+    --learning_rate 0.0005 \
     --lradj type1 \
     --train_epochs 100 \
     --d_model 768 \
@@ -77,6 +77,11 @@ python run.py \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
     --patience 10 \
-    --percent 10 \
-#     --feature_w 0 \
-#     --logits_w 0 \
+    --percent 5 \
+    --logits_w 0 \
+    --feature_w 0 \
+    --task_loss l1
+
+echo '====================================================================================================================='
+done
+done

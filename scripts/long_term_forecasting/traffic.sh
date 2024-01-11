@@ -6,7 +6,7 @@ model=GPT4TS
 for pred_len in 96 192 336 720
 do
 
-python main.py \
+python run.py \
     --root_path ./datasets/traffic/ \
     --data_path traffic.csv \
     --is_training 1 \
