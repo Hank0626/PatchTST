@@ -1,11 +1,21 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=4
 
 seq_len=96
 model=GPT4TS
 
-
 for pred_len in 96 192 336 720
 do
+    for task_w in 1
+    do
+        for feature_w in 0 0.01
+        do
+            for logits_w in 0 1
+            do
+                if [ "$task_w" = "1" ] && [ "$feature_w" = "0.01" ] && [ "$logits_w" = "1" ];
+                then
+                    continue
+                fi
+
 
 python run.py \
     --root_path ./datasets/weather/ \
@@ -33,10 +43,17 @@ python run.py \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
-    --patience 5 \
-    --task_loss smooth_l1 \
-    --distill_loss smooth_l1 \
-    --logits_loss smooth_l1
+    --patience 3 \
+    --task_w $task_w \
+    --logits_w $logits_w \
+    --feature_w $feature_w
+
+echo "+++++++++++++++++++++++++++++++++++++++++++"
+
+            done
+        done
+    done
 
 echo '====================================================================================================================='
 done
+

@@ -15,6 +15,7 @@ python run.py \
     --model_id ETTh1_$model'_'$seq_len'_'$pred_len \
     --data ETTh1 \
     --seq_len $seq_len \
+    --label_len 0 \
     --pred_len $pred_len \
     --batch_size 256 \
     --learning_rate 0.0005 \
@@ -29,7 +30,6 @@ python run.py \
     --gpt_layer 6 \
     --itr 1 \
     --model $model \
-    --pretrain 1 \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
