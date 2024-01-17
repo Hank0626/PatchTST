@@ -9,6 +9,8 @@ do
 python run.py \
     --root_path ./datasets/ETT-small/ \
     --data_path ETTm2.csv \
+    --is_training 1 \
+    --task_name long_term_forecast \
     --model_id ETTm2_$model'_'$seq_len'_'$pred_len \
     --data ETTm2 \
     --seq_len $seq_len \
@@ -24,14 +26,9 @@ python run.py \
     --dropout 0.3 \
     --enc_in 7 \
     --c_out 7 \
-    --freq 0 \
-    --patch_size 16 \
-    --stride 8 \
     --gpt_layer $gpt_layer \
     --itr 1 \
     --model $model \
-    --cos 1 \
-    --tmax 20 \
     --r 8 \
     --lora_alpha 32 \
     --lora_dropout 0.1 \
